@@ -1,0 +1,23 @@
+[package]
+name = "usync"
+version = "0.2.1"
+edition = "2021"
+license = "MIT"
+authors = ["kprotty"]
+readme = "README.md"
+documentation = "https://docs.rs/usync"
+repository = "https://github.com/kprotty/usync"
+description = "fast, drop-in, synchronization primitives"
+categories = ["concurrency", "data-structures"]
+keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
+
+[features]
+default = []
+send_guard = []
+nightly = ["lock_api/nightly"]
+
+[dependencies]
+lock_api = "0.4"
+
+[dev-dependencies]
+rand = "0.8.3"
