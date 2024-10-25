@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  rustfmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+      - run: cargo fmt --manifest-path benchmark/Cargo.toml --all -- --check
+  check-warnings:
+    name: Check for build failures/warnings on ${{ matrix.target }} (rust ${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [nightly, stable, 1.59.0]
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+          target: ${{ matrix.target }}
+          components: rust-src
+      - run: cargo check --all-targets --verbose --target=${{ matrix.target }}
+      - run: cargo check --all-targets --verbose --all-features --target=${{ matrix.target }}
+      - run: cargo check --manifest-path benchmark/Cargo.toml --all-targets --verbose --target=${{ matrix.target }}
+
+  test:
+    name: Test ${{ matrix.rust }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        rust: [nightly, stable, 1.59.0]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - run: cargo test --verbose
+      - run: cargo test --verbose --all-features
+
+  test-cross:
+    name: Cross Test ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # 32/64 bit arm
+          - armv7-unknown-linux-gnueabihf
+          - aarch64-unknown-linux-gnu
+          # 32bit x86 (with/without decent instructions)
+          - i686-unknown-linux-gnu
+          - i586-unknown-linux-gnu
+          # # 32bit big endian
+          # - mips-unknown-linux-gnu
+          # - mips64-unknown-linux-gnuabi64
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          profile: minimal
+          target: ${{ matrix.target }}
+          components: rust-src
+      - uses: taiki-e/install-action@cross
+      - run: cross test --verbose --target=${{ matrix.target }}
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          profile: minimal
+          components: miri, rust-src
+      # Note: Can't use strict miri flags til it gets more support for atomic
+      # ops on pointers
+      - run: cargo miri test
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+#  sanitizers:
+#    name: Test sanitizer ${{ matrix.sanitizer }}
+#    runs-on: ubuntu-latest
+#    env:
+#      RUST_BACKTRACE: 0
+#      # only used by asan, but we set it for all of them cuz its easy
+#      ASAN_OPTIONS: detect_stack_use_after_return=1
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        sanitizer: [address, memory, thread]
+#        include:
+#          - sanitizer: memory
+#            extra_rustflags: "-Zsanitizer-memory-track-origins"
+#
+#    steps:
+#      - uses: actions/checkout@v2
+#        with:
+#          fetch-depth: 1
+#      - uses: actions-rs/toolchain@v1
+#        with:
+#          profile: minimal
+#          toolchain: nightly
+#          override: true
+#          components: rust-src
+#      - name: Test with sanitizer
+#        env:
+#          RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }} ${{ matrix.extra_rustflags }}
+#          RUSTDOCFLAGS: -Zsanitizer=${{ matrix.sanitizer }} ${{ matrix.extra_rustflags }}
+#        run: |
+#          echo "note: RUSTFLAGS='$RUSTFLAGS'"
+#          cargo -Zbuild-std test --target=x86_64-unknown-linux-gnu
